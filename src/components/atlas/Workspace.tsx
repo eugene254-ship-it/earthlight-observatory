@@ -5,6 +5,7 @@ import { REGIONS, MISSIONS, DROUGHT_HOTSPOTS, type Region, type Mission } from "
 import { RegionProfile } from "./RegionProfile";
 import { MissionDetail } from "./MissionDetail";
 import { AskAtlas, type AskResult } from "./AskAtlas";
+import type { Hotspot } from "@/components/Globe";
 
 type LayerKey = "nature" | "cities" | "people" | "water" | "health" | "infrastructure";
 
