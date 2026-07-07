@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Globe as GlobeIcon, Radio, Brain, Heart, Settings, Search, Sparkles, TreePine, Building2, Users, Droplets, HeartPulse, Zap, ChevronRight } from "lucide-react";
 import { Globe } from "@/components/Globe";
+import { REGIONS, MISSIONS, DROUGHT_HOTSPOTS, type Region, type Mission } from "./data";
+import { RegionProfile } from "./RegionProfile";
+import { MissionDetail } from "./MissionDetail";
+import { AskAtlas, type AskResult } from "./AskAtlas";
+import type { Hotspot } from "@/components/Globe";
 
 type LayerKey = "nature" | "cities" | "people" | "water" | "health" | "infrastructure";
 
@@ -11,19 +16,6 @@ const LAYERS: { key: LayerKey; label: string; icon: React.ComponentType<{ classN
   { key: "water", label: "Water", icon: Droplets },
   { key: "health", label: "Health", icon: HeartPulse },
   { key: "infrastructure", label: "Infrastructure", icon: Zap },
-];
-
-const MARKERS = [
-  { lon: 36.8, lat: -0.3, label: "Nakuru", tone: "gold" as const, region: "Kenya" },
-  { lon: -60, lat: -3, label: "Amazonia", tone: "forest" as const, region: "Brazil" },
-  { lon: 78, lat: 20, label: "Deccan", tone: "gold" as const, region: "India" },
-  { lon: 8, lat: 46, label: "Alpine Arc", tone: "forest" as const, region: "Europe" },
-];
-
-const MISSIONS = [
-  { title: "Restore Nakuru Watershed", stars: 4, impact: "High", time: "18 months", funding: "$2M" },
-  { title: "Reforest Coastal Ridge", stars: 5, impact: "Very High", time: "36 months", funding: "$4.8M" },
-  { title: "Solar Microgrid Network", stars: 3, impact: "Medium", time: "12 months", funding: "$900K" },
 ];
 
 const NAV = [
@@ -37,16 +29,113 @@ const NAV = [
 export function Workspace() {
   const [activeLayer, setActiveLayer] = useState<LayerKey>("nature");
   const [activeNav, setActiveNav] = useState("earth");
-  const [selected, setSelected] = useState(MARKERS[0]);
+  const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [year, setYear] = useState(2025);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [askResult, setAskResult] = useState<AskResult | null>(null);
+  const [askLoading, setAskLoading] = useState(false);
+  const [hotspots, setHotspots] = useState<typeof DROUGHT_HOTSPOTS>([]);
+  const [mission, setMission] = useState<Mission | null>(null);
+  const [focus, setFocus] = useState<{ lon: number; lat: number } | null>(null);
+
+  const timePhase = useMemo(() => (year - 2025) / 10, [year]);
+  const era = year <= 2024 ? "Historical" : year === 2025 ? "Present" : year >= 2030 ? "Projection" : "Near-term";
+
+  const markers = REGIONS.map((r) => ({ id: r.id, lon: r.lon, lat: r.lat, label: r.name, tone: r.tone }));
+
+  const openRegion = (r: Region) => {
+    setSelectedRegion(r);
+    setFocus({ lon: r.lon, lat: r.lat });
+    // release focus after animation so user can spin again
+    setTimeout(() => setFocus(null), 2200);
+  };
+
+  const flyToMission = (m: Mission) => {
+    setFocus({ lon: m.lon, lat: m.lat });
+    setTimeout(() => setFocus(null), 2200);
+    setMission(null);
+  };
+
+  const askAtlas = (query: string) => {
+    setAskLoading(true);
+    setAskResult(null);
+    setHotspots([]);
+    setTimeout(() => {
+      // Simple query router — deterministic demo response
+      const q = query.toLowerCase();
+      if (q.includes("drought") || q.includes("water") || q.includes("dry")) {
+        setHotspots(DROUGHT_HOTSPOTS);
+        setActiveLayer("water");
+        setAskResult({
+          query,
+          headline: "7 macro-regions face elevated to severe drought risk over the next decade.",
+          confidence: 92,
+          drivers: [
+            { label: "Rainfall variability", weight: 0.88 },
+            { label: "Aquifer depletion", weight: 0.74 },
+            { label: "Land-use change", weight: 0.61 },
+            { label: "Temperature anomaly", weight: 0.55 },
+          ],
+          actions: [
+            "Prioritize watershed restoration in Horn of Africa and Deccan.",
+            "Expand precision irrigation and rainwater harvesting incentives.",
+            "Move drought-sensitive crops to climate-resilient varieties.",
+            "Coordinate transboundary river-basin governance early.",
+          ],
+          regions: DROUGHT_HOTSPOTS.map((h) => h.label ?? ""),
+        });
+      } else if (q.includes("forest") || q.includes("tree") || q.includes("canopy")) {
+        setActiveLayer("nature");
+        setHotspots([
+          { lon: -60, lat: -8, intensity: 0.9 }, { lon: 105, lat: -1, intensity: 0.7 },
+          { lon: 25, lat: 0, intensity: 0.75 }, { lon: 36, lat: 0, intensity: 0.55 },
+        ]);
+        setAskResult({
+          query,
+          headline: "Tropical forest loss is concentrated across four canopy frontiers.",
+          confidence: 89,
+          drivers: [
+            { label: "Agricultural expansion", weight: 0.82 },
+            { label: "Illegal logging", weight: 0.66 },
+            { label: "Fire regime shift", weight: 0.58 },
+            { label: "Infrastructure corridors", weight: 0.44 },
+          ],
+          actions: [
+            "Fund community forest concessions in Amazonia.",
+            "Deploy real-time deforestation alerts to enforcement.",
+            "Scale sustainable cocoa/coffee value chains.",
+          ],
+          regions: ["Amazonia", "Congo Basin", "Borneo", "East African montane"],
+        });
+      } else {
+        setActiveLayer("cities");
+        setHotspots([
+          { lon: 77, lat: 28, intensity: 0.8 }, { lon: 121, lat: 31, intensity: 0.7 },
+          { lon: -99, lat: 19, intensity: 0.6 }, { lon: 3, lat: 6, intensity: 0.75 },
+        ]);
+        setAskResult({
+          query,
+          headline: "Sanctum surfaces four megacity zones matching your query.",
+          confidence: 78,
+          drivers: [
+            { label: "Population density", weight: 0.78 },
+            { label: "Service gaps", weight: 0.62 },
+            { label: "Climate exposure", weight: 0.5 },
+          ],
+          actions: ["Review the highlighted regions in the intelligence panel.", "Open a region profile to explore drivers in depth."],
+          regions: ["Delhi", "Shanghai", "Mexico City", "Lagos"],
+        });
+      }
+      setAskLoading(false);
+    }, 1100);
+  };
 
   return (
     <div className="fixed inset-0 flex overflow-hidden">
       <div className="starfield" />
 
       {/* Left rail */}
-      <aside className="relative z-20 w-20 shrink-0 border-r border-border/60 flex flex-col items-center py-6 gap-1 glass-panel">
+      <aside className="relative z-30 w-20 shrink-0 border-r border-border/60 flex flex-col items-center py-6 gap-1 glass-panel">
         <div className="mb-6 text-primary">
           <div className="w-10 h-10 rounded-full border border-primary/50 flex items-center justify-center breathe">
             <Sparkles className="w-4 h-4" />
@@ -66,21 +155,17 @@ export function Workspace() {
             >
               <Icon className="w-5 h-5" />
               {active && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-primary rounded-r" />}
-              <span className="absolute left-14 whitespace-nowrap px-2 py-1 rounded bg-popover text-xs opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-                {n.label}
-              </span>
             </button>
           );
         })}
       </aside>
 
-      {/* Main globe area */}
-      <main className="relative flex-1 flex flex-col">
-        {/* Top bar */}
+      {/* Main */}
+      <main className="relative flex-1 flex flex-col min-w-0">
         <header className="relative z-10 flex items-center justify-between px-8 py-5">
           <div>
             <p className="text-[10px] tracking-[0.4em] text-muted-foreground uppercase">Sanctum</p>
-            <h1 className="font-display text-2xl gold-text">Earth</h1>
+            <h1 className="font-display text-2xl gold-text">Earth · {era}</h1>
           </div>
           <div className="flex-1 max-w-md mx-8">
             <div className="relative">
@@ -92,31 +177,29 @@ export function Workspace() {
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground tracking-widest">
-            <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            LIVE OBSERVATORY
+            <span className={`w-2 h-2 rounded-full ${timePhase > 0 ? "bg-destructive" : "bg-accent"} animate-pulse`} />
+            {timePhase > 0 ? "PROJECTION" : "LIVE OBSERVATORY"}
           </div>
         </header>
 
         {/* Globe */}
         <div className="relative flex-1 min-h-0">
           <Globe
-            markers={MARKERS}
+            markers={markers}
             activeLayer={activeLayer}
-            onMarkerClick={(m) => setSelected(m as typeof MARKERS[number])}
+            hotspots={hotspots}
+            focusLon={focus?.lon ?? null}
+            focusLat={focus?.lat ?? null}
+            timePhase={timePhase}
+            highlightId={selectedRegion?.id}
+            onMarkerClick={(m) => {
+              const region = REGIONS.find((r) => r.id === m.id);
+              if (region) openRegion(region);
+            }}
           />
 
-          {/* Region readout */}
-          <div className="absolute left-8 bottom-32 float-in">
-            <p className="text-[10px] tracking-[0.4em] text-muted-foreground uppercase">{selected.region}</p>
-            <h2 className="font-display text-4xl mb-3">{selected.label}</h2>
-            <div className="flex items-baseline gap-3">
-              <span className="text-xs tracking-widest text-muted-foreground uppercase">Restoration Score</span>
-              <span className="font-display text-5xl gold-text">84</span>
-            </div>
-          </div>
-
           {/* Layer bar */}
-          <div className="absolute right-8 top-4 flex flex-col gap-2">
+          <div className="absolute right-8 top-4 flex flex-col gap-2 z-10">
             {LAYERS.map((l) => {
               const Icon = l.icon;
               const active = activeLayer === l.key;
@@ -138,28 +221,47 @@ export function Workspace() {
           </div>
 
           {/* Timeline */}
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-8 w-[min(720px,80%)] glass-panel rounded-full px-6 py-3 flex items-center gap-4">
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-8 w-[min(720px,80%)] glass-panel rounded-full px-6 py-3 flex items-center gap-4 z-10">
             <span className="text-xs text-muted-foreground tracking-widest">2010</span>
-            <input
-              type="range" min={2010} max={2035} value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="flex-1 accent-primary"
-            />
-            <span className="text-xs text-primary tracking-widest">{year}{year >= 2026 ? " • projection" : ""}</span>
+            <div className="relative flex-1">
+              <input
+                type="range" min={2010} max={2035} value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              {/* present marker */}
+              <div className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ left: `${((2025 - 2010) / (2035 - 2010)) * 100}%` }}>
+                <div className="w-px h-4 -translate-x-1/2 bg-accent" />
+              </div>
+            </div>
+            <span className={`text-xs tracking-widest min-w-[6ch] text-right ${timePhase > 0 ? "text-destructive" : timePhase < 0 ? "text-muted-foreground" : "text-primary"}`}>
+              {year}
+            </span>
           </div>
+
+          {/* projection watermark */}
+          {timePhase > 0 && (
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.5em] text-destructive/70 uppercase pointer-events-none float-in">
+              2035 Projection · Warmer · Drier
+            </div>
+          )}
+          {timePhase < 0 && (
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.5em] text-muted-foreground/70 uppercase pointer-events-none float-in">
+              Historical Reconstruction
+            </div>
+          )}
         </div>
       </main>
 
-      {/* Right panel — Intelligence + Stewardship + Missions */}
+      {/* Right panel */}
       <aside className="relative z-10 w-[360px] shrink-0 border-l border-border/60 glass-panel overflow-y-auto">
         <div className="p-6 space-y-8">
-          {/* Stewardship gauge */}
           <section>
             <p className="text-[10px] tracking-[0.4em] text-muted-foreground uppercase mb-4">Stewardship</p>
             <StewardshipGauge value={78} />
           </section>
 
-          {/* Insight */}
           <section>
             <p className="text-[10px] tracking-[0.4em] text-muted-foreground uppercase mb-3">Sanctum Intelligence</p>
             <div className="rounded-xl border border-border/60 p-5 bg-secondary/30">
@@ -175,13 +277,13 @@ export function Workspace() {
             </div>
           </section>
 
-          {/* Missions */}
           <section>
             <p className="text-[10px] tracking-[0.4em] text-muted-foreground uppercase mb-3">Missions</p>
             <div className="space-y-3">
               {MISSIONS.map((m) => (
                 <button
-                  key={m.title}
+                  key={m.id}
+                  onClick={() => setMission(m)}
                   className="w-full text-left rounded-xl border border-border/60 p-4 hover:border-primary/50 hover:bg-primary/5 transition-all group"
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -205,27 +307,24 @@ export function Workspace() {
         </div>
       </aside>
 
-      {/* AI Copilot orb */}
+      {/* Ask Atlas orb + panel */}
       <button
         onClick={() => setCopilotOpen((v) => !v)}
-        className="fixed bottom-8 right-[380px] z-30 w-14 h-14 rounded-full border border-primary/40 bg-primary/10 backdrop-blur flex items-center justify-center text-primary hover:bg-primary/20 transition-all breathe"
+        className="fixed bottom-8 right-[380px] z-40 w-14 h-14 rounded-full border border-primary/40 bg-primary/10 backdrop-blur flex items-center justify-center text-primary hover:bg-primary/20 transition-all breathe"
         title="Ask Atlas"
       >
         <Sparkles className="w-5 h-5" />
       </button>
-      {copilotOpen && (
-        <div className="fixed bottom-28 right-[380px] z-30 w-80 glass-panel rounded-2xl p-4 float-in">
-          <p className="text-[10px] tracking-[0.4em] text-muted-foreground uppercase mb-2">Ask Atlas</p>
-          <input
-            autoFocus
-            placeholder='"Show areas at drought risk."'
-            className="w-full h-10 px-3 rounded-lg bg-input/40 border border-border text-sm focus:outline-none focus:border-primary/50"
-          />
-          <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-            The map will animate to reveal the answer. Speak in questions of stewardship.
-          </p>
-        </div>
-      )}
+      <AskAtlas
+        open={copilotOpen}
+        onClose={() => { setCopilotOpen(false); setHotspots([]); setAskResult(null); }}
+        onAsk={askAtlas}
+        result={askResult}
+        loading={askLoading}
+      />
+
+      <RegionProfile region={selectedRegion} onClose={() => setSelectedRegion(null)} />
+      <MissionDetail mission={mission} onClose={() => setMission(null)} onLaunch={flyToMission} />
     </div>
   );
 }
@@ -238,7 +337,6 @@ function Row({ k, v, tone }: { k: string; v: string; tone?: "primary" | "accent"
     </div>
   );
 }
-
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -268,12 +366,8 @@ function StewardshipGauge({ value }: { value: number }) {
           strokeDasharray={`${dash} ${C - dash}`}
           transform="rotate(-90 90 90)"
         />
-        <text x="90" y="88" textAnchor="middle" className="font-display" fontSize="42" fill="var(--color-foreground)">
-          {value}
-        </text>
-        <text x="90" y="112" textAnchor="middle" fontSize="10" fill="var(--color-primary)" letterSpacing="3">
-          EXCELLENT
-        </text>
+        <text x="90" y="88" textAnchor="middle" className="font-display" fontSize="42" fill="var(--color-foreground)">{value}</text>
+        <text x="90" y="112" textAnchor="middle" fontSize="10" fill="var(--color-primary)" letterSpacing="3">EXCELLENT</text>
       </svg>
       <p className="text-xs text-muted-foreground text-center max-w-[220px] leading-relaxed -mt-2">
         Ecosystem health, resilience, access to services, and governance — woven into one signal.
